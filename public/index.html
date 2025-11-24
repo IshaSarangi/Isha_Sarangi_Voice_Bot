@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Isha Voice Bot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+    /* Basic styling for a clean, centered card UI - soft blush / peach / ivory theme */
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fff6f1;              /* soft ivory-peach background */
+      color: #4a3c3b;                   /* warm dark brownish text */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .card {
+      background: #fffdfb;              /* off-white card */
+      border-radius: 24px;
+      padding: 24px 20px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 18px 40px rgba(244, 167, 157, 0.35); /* soft peach shadow */
+      border: 1px solid #f7c6c2;        /* blush border */
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 1.4rem;
+      color: #3b2a2a;                   /* slightly deeper heading color */
+    }
+
+    p.subtitle {
+      margin: 0 0 16px;
+      font-size: 0.9rem;
+      color: #b58b83;                   /* muted warm subtitle */
+    }
+
+    .bubble {
+      padding: 10px 12px;
+      border-radius: 16px;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .user {
+      background: #ffb4a2;              /* peach user bubble */
+      color: #3b2a2a;
+      margin-left: 40px;
+    }
+
+    .bot {
+      background: #ffe5d9;              /* soft blush bot bubble */
+      color: #4a3c3b;
+      margin-right: 40px;
+    }
+
+    .log {
+      max-height: 260px;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      padding-right: 4px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      border-radius: 999px;
+      border: none;
+      font-size: 1rem;
+      cursor: pointer;
+      font-weight: 600;
+      background: #ff8fa3;              /* main pink-peach button */
+      color: #fffdfb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 8px 18px rgba(255, 143, 163, 0.4);
+    }
+
+    button:hover:not(:disabled) {
+      background: #ff6b89;              /* slightly deeper on hover */
+    }
+
+    button.recording {
+      background: #ff4f6a;              /* stronger pink when recording */
+      color: #fffdfb;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .status {
+      font-size: 0.8rem;
+      color: #c27b7f;                   /* warm status text */
+      margin-top: 6px;
+      min-height: 16px;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: #b58b83;                   /* muted hint text */
+      margin-top: 12px;
+    }
+  </style>
+
+
+
+</head>
+<body>
+  <div class="card">
+    <h1>Isha’s Voice Bot</h1>
+    <p class="subtitle">Ask me things like “What’s your life story?”, "What projects have you done?" or “How are you as a person?”.</p>
+
+    <!-- Chat log for user & bot messages -->
+    <div class="log" id="log"></div>
+
+    <!-- Button to start/stop voice recording -->
+    <button id="talkBtn">
+      🎤 Tap to talk
+    </button>
+    <div class="status" id="status"></div>
+    <div class="hint">
+      Examples: “What should we know about your life story?”, “What misconception do your coworkers have about you?”
+    </div>
+  </div>
+
+  <script>
+    // Get references to elements
+    const logEl = document.getElementById('log');
+    const talkBtn = document.getElementById('talkBtn');
+    const statusEl = document.getElementById('status');
+
+    // Voice Loader
+    let availableVoices = [];
+
+    window.speechSynthesis.onvoiceschanged = () => {
+    availableVoices = window.speechSynthesis.getVoices();
+    };
+
+
+    // Browser speech APIs
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const hasSpeechRecognition = !!SpeechRecognition;
+    const hasSpeechSynthesis = !!window.speechSynthesis;
+
+    let recognition = null;
+    let isRecording = false;
+
+    // Store conversation so we can send context to the backend
+    let messages = [];
+
+    // Helper: create a chat bubble
+    function addBubble(text, from) {
+      const div = document.createElement('div');
+      div.className = 'bubble ' + (from === 'user' ? 'user' : 'bot');
+      div.textContent = text;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Helper: speak text out loud using SpeechSynthesis
+    function speak(text) {
+    if (!hasSpeechSynthesis) return;
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'en-IN';
+    utter.rate = 1;
+    utter.pitch = 1.1; // slightly brighter tone, more feminine
+
+    // Try to find female voices (priority: Indian female English, then general female)
+    const femaleVoice = availableVoices.find(v =>
+    (v.lang.toLowerCase().includes('en-in') && v.name.toLowerCase().includes('female')) ||
+    v.name.toLowerCase().includes('female') ||
+    v.name.toLowerCase().includes('zira') ||        // Windows female voice
+    v.name.toLowerCase().includes('sara')
+    );
+
+    if (femaleVoice) {
+    utter.voice = femaleVoice;
+    }
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+    }
+
+
+    // Sends user text and conversation history to backend /api/chat
+    async function sendToBot(userText) {
+      messages.push({ role: 'user', content: userText });
+      statusEl.textContent = 'Thinking...';
+      talkBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages })
+        });
+
+        if (!res.ok) {
+          throw new Error('API error');
+        }
+
+        const data = await res.json();
+        const reply = data.reply || 'Sorry, something went wrong.';
+        messages.push({ role: 'assistant', content: reply });
+
+        addBubble(reply, 'bot');
+        speak(reply);
+        statusEl.textContent = '';
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Error talking to the AI. Please try again.';
+      } finally {
+        talkBtn.disabled = false;
+      }
+    }
+
+    // Start speech recognition
+    function startRecognition() {
+      if (!hasSpeechRecognition) {
+        statusEl.textContent = 'Speech recognition is not supported in this browser. Try Chrome on desktop or Android.';
+        return;
+      }
+
+      if (isRecording) return;
+
+      recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        talkBtn.classList.add('recording');
+        talkBtn.textContent = '⏹ Tap to stop';
+        statusEl.textContent = 'Listening...';
+      };
+
+      recognition.onresult = (event) => {
+        const text = event.results[0][0].transcript.trim();
+        if (text) {
+          addBubble(text, 'user');
+          sendToBot(text);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech error', event.error);
+        statusEl.textContent = 'Speech error: ' + event.error;
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        talkBtn.classList.remove('recording');
+        talkBtn.textContent = '🎤 Tap to talk';
+        if (statusEl.textContent === 'Listening...') {
+          statusEl.textContent = '';
+        }
+      };
+
+      recognition.start();
+    }
+
+    // Stop speech recognition
+    function stopRecognition() {
+      if (recognition && isRecording) {
+        recognition.stop();
+      }
+    }
+
+    // Handle button click: toggle recording
+    talkBtn.addEventListener('click', () => {
+      if (!hasSpeechRecognition) {
+        statusEl.textContent = 'Speech recognition not supported in this browser.';
+        return;
+      }
+      if (isRecording) {
+        stopRecognition();
+      } else {
+        startRecognition();
+      }
+    });
+
+    // Initial greeting bubble (optional)
+    const initialGreeting = "Hi, I’m Isha’s voice bot. You can ask me about my life story, my superpower, areas I want to grow in, or how I push my boundaries.";
+    addBubble(initialGreeting, 'bot');
+    if (hasSpeechSynthesis) {
+      speak(initialGreeting);
+    }
+  </script>
+</body>
+</html>
